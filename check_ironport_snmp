@@ -1,0 +1,588 @@
+#!/bin/bash
+
+# Script:       check_ironport_snmp
+# Version:      0.1
+# Author:       Jochen Schalanda <jochen@schalanda.name>
+# Description:  Checks Cisco Ironport Appliances via SNMP
+# License:      MIT, see LICENSE.txt
+
+if [ ! -z ${DEBUG} ]; then
+    set -x
+fi
+
+STATE_OK=0          # define the exit code if status is OK
+STATE_WARNING=1     # define the exit code if status is Warning
+STATE_CRITICAL=2    # define the exit code if status is Critical
+STATE_UNKNOWN=3     # define the exit code if status is Unknown
+STATE_STRING=("OK" "WARNING" "CRITICAL" "UNKNOWN")
+
+SNMP_VERSION="2c"
+PATH="/usr/local/bin:/usr/bin:/bin"
+
+# Show help message
+if [ "${1}" = "--help" -o "${#}" = "0" ]; then
+    cat <<EOF
+Usage: ./check_ironport_snmp -H host -C community -t type [-w warning] [-c critical]
+
+Requirements:
+    snmpget, snmpwalk
+
+Options:
+    -H    Hostname
+    -C    SNMP community name (at least read-only)
+    -v    SNMP version (1|2c|3), default: 2c
+    -P    Passphrase for SNMP v3 (user name defaults to 'v3get')
+    -t    Type to check, see list below
+    -w    Warning threshold
+    -c    Critical threshold
+
+Types:
+    cpu*                 -> Percent CPU Utilization
+    mem*                 -> Percent Memory Utilization
+    memoryavail          -> Memory Availability Status
+    diskio*              -> Percent Disk I/O Utilization
+    queue*               -> Percent Queue Utilization
+    queueavail           -> Queue Availability Status
+    resourceconservation -> Resource Conservation Reason
+    temperature*         -> Device Temperature (in °C)
+    raid                 -> RAID Status
+    fan*                 -> Fans Status
+    psstatus             -> Power Supply Status
+    psredundancy         -> Power Supply Redundancy
+    openfiles*           -> Open Files or Sockets
+    mailtransferthreads* -> Mail Transfer Threads
+    dns*                 -> Pending and Outstanding DNS Requests
+
+Warning and critical thresholds must be given for checks marked with *.
+
+Example:
+    ./check_ironport_snmp -H foobar.example.com -C public -t mem -w 90 -c 98
+EOF
+    exit ${STATE_UNKNOWN}
+fi
+
+
+# Check if all dependencies are available
+for CMD in "snmpget" "snmpwalk" "["
+do
+    if ! $(which ${CMD} &>/dev/null); then
+        echo "UNKNOWN: ${CMD} does not exist, please check if command exists and PATH is correct"
+        exit ${STATE_UNKNOWN}
+    fi
+done
+
+
+# Process user-provided parameters
+while getopts "v:P:H:C:t:w:c:" OPT;
+do
+    case ${OPT} in
+    H)    SNMP_HOST=${OPTARG};;
+    C)    SNMP_COMMUNITY=${OPTARG};;
+    v)    SNMP_VERSION=${OPTARG};;
+    P)    SNMP_PASSPHRASE=${OPTARG};;
+    t)    TYPE=${OPTARG};;
+    w)    WARN_THRESHOLD=${OPTARG};;
+    c)    CRIT_THRESHOLD=${OPTARG};;
+    \?)
+        echo ""
+        echo "Please use options -H for hostname, -C for SNMP community, -t for type,"
+        echo "-w for warning threshold and -c for critical threshold."
+        echo ""
+        echo "Also see ${0} --help"
+        exit ${STATE_UNKNOWN}
+        ;;
+    esac
+done
+
+
+# Check parameters for SNMP
+case ${SNMP_VERSION} in
+1|2c)
+    SNMPGET="snmpget -v ${SNMP_VERSION} -O vq -c ${SNMP_COMMUNITY} ${SNMP_HOST}"
+    SNMPWALK="snmpwalk -v ${SNMP_VERSION} -O vq -c ${SNMP_COMMUNITY} ${SNMP_HOST}"
+;;
+3)
+    if [ -z "${SNMP_PASSPHRASE}" ]; then
+        echo "SNMP passphrase missing. Please use -P to provide the passphrase for SNMPv3."
+        exit ${STATE_UNKNOWN}
+    fi
+
+    SNMPGET="snmpget -v ${SNMP_VERSION} -l authNoPriv -a MD5 -u v3get -A ${SNMP_PASSPHRASE} -O vq -c ${SNMP_COMMUNITY} ${SNMP_HOST}"
+    SNMPWALK="snmpwalk -v ${SNMP_VERSION} -l authNoPriv -a MD5 -u v3get -A ${SNMP_PASSPHRASE} -O vq -c ${SNMP_COMMUNITY} ${SNMP_HOST}"
+;;
+*)
+    echo "Unknown SNMP version: ${SNMP_VERSION}"
+    exit ${STATE_UNKNOWN}
+;;
+esac
+
+
+# Perform sanity check on thresholds
+case "${TYPE}" in
+cpu|mem|diskio|queue|temperature|fan|openfiles|mailtransferthreads|dns)
+    if [ -z ${WARN_THRESHOLD} ]; then
+        echo "Warning threshold missing. Please use -w to provide a value for warning threshold."
+        exit ${STATE_UNKNOWN}
+    fi
+
+    if [ -z ${CRIT_THRESHOLD} ]; then
+        echo "Critical threshold missing. Please use -c to provide a value for critical threshold."
+        exit ${STATE_UNKNOWN}
+    fi
+
+    if [ ${CRIT_THRESHOLD} -le ${WARN_THRESHOLD} ]; then
+        echo "Critical threshold must not be smaller than warning threshold."
+        exit ${STATE_UNKNOWN}
+    fi
+;;
+esac
+
+
+# Run checks according to provided type
+case "${TYPE}" in
+mem)
+    # ASYNCOS-MAIL-MIB::perCentMemoryUtilization.0
+    mem=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.1.0)
+
+    if [ ${mem} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${mem} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="Memory utilization ${STATE_STRING[${EXIT_STATUS}]} - ${mem}%"
+    PERF_DATA="'Memory utilization'=${mem}%;${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+cpu)
+    # ASYNCOS-MAIL-MIB::perCentCPUUtilization.0
+    cpu=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.2.0)
+
+    if [ ${cpu} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${cpu} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="CPU utilization ${STATE_STRING[${EXIT_STATUS}]} - ${cpu}%"
+    PERF_DATA="'CPU utilization'=${cpu}%;${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+diskio)
+    # ASYNCOS-MAIL-MIB::perCentDiskIOUtilization.0
+    diskio=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.3.0)
+
+    if [ ${diskio} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${diskio} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="Disk I/O utilization ${STATE_STRING[${EXIT_STATUS}]} - ${diskio}%"
+    PERF_DATA="'Disk I/O utilization'=${diskio}%;${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+queue)
+    # ASYNCOS-MAIL-MIB::perCentQueueUtilization.0
+    queue=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.4.0)
+
+    if [ ${queue} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${queue} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="Queue utilization ${STATE_STRING[${EXIT_STATUS}]} - ${queue}%"
+    PERF_DATA="'Queue utilization'=${queue}%;${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+queueavail)
+    # ASYNCOS-MAIL-MIB::queueAvailabilityStatus.0
+    queue_status=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.5.0)
+
+    case ${queue_status} in
+    1)
+        EXIT_STATUS=${STATE_OK}
+        status="Space available"
+    ;;
+    2)
+        EXIT_STATUS=${STATE_WARNING}
+        status="Space shortage"
+    ;;
+    3)
+        EXIT_STATUS=${STATE_CRITICAL}
+        status="Full"
+    ;;
+    *)
+        EXIT_STATUS=${STATE_UNKNOWN}
+        status="Unknown"
+    ;;
+    esac
+
+    SERVICE_OUTPUT="Queue availability ${STATE_STRING[${EXIT_STATUS}]} - ${status}"
+
+    echo "${SERVICE_OUTPUT}"
+    exit ${EXIT_STATUS}
+;;
+resourceconservation)
+    # ASYNCOS-MAIL-MIB::resourceConservationReason.0
+    resource_conservation_reason=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.6.0)
+
+    case ${resource_conservation_reason} in
+    1)
+        EXIT_STATUS=${STATE_OK}
+        status="No resource conservation"
+    ;;
+    2)
+        EXIT_STATUS=${STATE_WARNING}
+        status="Memory shortage"
+    ;;
+    3)
+        EXIT_STATUS=${STATE_WARNING}
+        status="Queue space shortage"
+    ;;
+    4)
+        EXIT_STATUS=${STATE_CRITICAL}
+        status="Queue full"
+    ;;
+    *)
+        EXIT_STATUS=${STATE_UNKNOWN}
+        status="Unknown"
+    ;;
+    esac
+
+    SERVICE_OUTPUT="Resource conservation reason ${STATE_STRING[${EXIT_STATUS}]} - ${status}"
+
+    echo "${SERVICE_OUTPUT}"
+    exit ${EXIT_STATUS}
+;;
+memoryavail)
+    # ASYNCOS-MAIL-MIB::memoryAvailabilityStatus.0
+    memory_status=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.7.0)
+
+    case ${memory_status} in
+    1)
+        EXIT_STATUS=${STATE_OK}
+        status="Memory available"
+    ;;
+    2)
+        EXIT_STATUS=${STATE_WARNING}
+        status="Memory shortage"
+    ;;
+    3)
+        EXIT_STATUS=${STATE_CRITICAL}
+        status="Memory full"
+    ;;
+    *)
+        EXIT_STATUS=${STATE_UNKNOWN}
+        status="Unknown"
+    ;;
+    esac
+
+    SERVICE_OUTPUT="Memory availability ${STATE_STRING[${EXIT_STATUS}]} - ${status}"
+
+    echo "${SERVICE_OUTPUT}"
+    exit ${EXIT_STATUS}
+;;
+temperature)
+    # ASYNCOS-MAIL-MIB::degreesCelsius.1
+    temperature=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.9.1.2.1)
+
+    if [ ${temperature} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${temperature} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="Temperature ${STATE_STRING[${EXIT_STATUS}]} - ${temperature}° C"
+    PERF_DATA="'Temperature'=${temperature};${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+openfiles)
+    # ASYNCOS-MAIL-MIB::openFilesOrSockets.0
+    open_files=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.19.0)
+
+    if [ ${open_files} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${open_files} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="Open files or sockets ${STATE_STRING[${EXIT_STATUS}]} - ${open_files} files"
+    PERF_DATA="'Open files or sockets'=${open_files};${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+mailtransferthreads)
+    # ASYNCOS-MAIL-MIB::mailTransferThreads.0
+    threads=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.20.0)
+
+    if [ ${threads} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${threads} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="Mail transfer threads ${STATE_STRING[${EXIT_STATUS}]} - ${threads} threads"
+    PERF_DATA="'Mail transfer threads'=${threads};${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+dns)
+    # ASYNCOS-MAIL-MIB::outstandingDNSRequests.0
+    outstanding_dns=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.15.0)
+    # ASYNCOS-MAIL-MIB::pendingDNSRequests.0
+    pending_dns=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.16.0)
+
+    if [ ${outstanding_dns} -gt ${CRIT_THRESHOLD} -o ${pending_dns} -gt ${CRIT_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_CRITICAL}
+    elif [ ${outstanding_dns} -gt ${WARN_THRESHOLD} -o ${pending_dns} -gt ${WARN_THRESHOLD} ]; then
+        EXIT_STATUS=${STATE_WARNING}
+    else
+        EXIT_STATUS=${STATE_OK}
+    fi
+
+    SERVICE_OUTPUT="DNS requests ${STATE_STRING[${EXIT_STATUS}]} - ${pending_dns} pending DNS requests, ${outstanding_dns} outstanding DNS requests"
+    PERF_DATA="'Pending DNS requests'=${pending_dns};${WARN_THRESHOLD};${CRIT_THRESHOLD} 'Outstanding DNS requests'=${outstanding_dns};${WARN_THRESHOLD};${CRIT_THRESHOLD}" 
+
+    echo "${SERVICE_OUTPUT} | ${PERF_DATA}"
+    exit ${EXIT_STATUS}
+;;
+psstatus)
+    declare -a PsStatus
+
+    SERVICE_OUTPUT=""
+    EXIT_STATUS=$STATE_OK
+
+    # ASYNCOS-MAIL-MIB::powerSupplyStatus
+    i=1
+    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.8.1.2)
+    do
+        PsStatus[${i}]=$line
+
+        case ${PsStatus[${i}]} in
+        1)
+            PS_STATUS=$STATE_OK
+            status_string="Not Installed"
+        ;;
+        2)
+            PS_STATUS=$STATE_OK
+            status_string="Healthy"
+        ;;
+        3)
+            PS_STATUS=$STATE_WARNING
+            status_string="No AC"
+        ;;
+        4)
+            PS_STATUS=$STATE_CRITICAL
+            status_string="Faulty"
+        ;;
+        *)
+            PS_STATUS=$STATE_UNKNOWN
+            status_string="Unknown"
+        ;;
+        esac
+
+        SERVICE_OUTPUT="${SERVICE_OUTPUT} PS ${i}=${status_string}(${STATE_STRING[${PS_STATUS}]})"
+
+        case $PS_STATUS in
+        $STATE_CRITICAL)
+            if [ ${EXIT_STATUS} -ne ${STATE_CRITICAL} ]; then
+                EXIT_STATUS=${PS_STATUS}
+            fi
+        ;;
+        $STATE_OK)
+        ;;
+        $STATE_WARNING|$STATE_UNKNOWN)
+            if [ ${EXIT_STATUS} -eq ${STATE_OK} ]; then
+                EXIT_STATUS=${PS_STATUS}
+            fi
+        ;;
+        esac
+
+        i=$(($i + 1 ))
+    done
+
+    echo "Power Supply status ${STATE_STRING[${EXIT_STATUS}]} -${SERVICE_OUTPUT}"
+    exit ${EXIT_STATUS}
+    ;;
+psredundancy)
+    declare -a PsRedundancy
+
+    SERVICE_OUTPUT=""
+    EXIT_STATUS=$STATE_OK
+
+    # ASYNCOS-MAIL-MIB::powerSupplyRedundancy
+    i=1
+    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.8.1.3)
+    do
+        PsRedundancy[${i}]=$line
+
+        case ${PsRedundancy[${i}]} in
+        1)
+            PS_STATUS=$STATE_OK
+            status_string="OK"
+        ;;
+        2)
+            PS_STATUS=$STATE_CRITICAL
+            status_string="Lost"
+        ;;
+        *)
+            PS_STATUS=$STATE_UNKNOWN
+            status_string="Unknown"
+        ;;
+        esac
+
+        SERVICE_OUTPUT="${SERVICE_OUTPUT} PS ${i}=${status_string}(${STATE_STRING[${PS_STATUS}]})"
+
+        case $PS_STATUS in
+        $STATE_CRITICAL)
+            if [ ${EXIT_STATUS} -ne ${STATE_CRITICAL} ]; then
+                EXIT_STATUS=${PS_STATUS}
+            fi
+        ;;
+        $STATE_OK)
+        ;;
+        $STATE_WARNING|$STATE_UNKNOWN)
+            if [ ${EXIT_STATUS} -eq ${STATE_OK} ]; then
+                EXIT_STATUS=${PS_STATUS}
+            fi
+        ;;
+        esac
+
+        i=$(($i + 1 ))
+    done
+
+    echo "Power Supply redundancy ${STATE_STRING[${EXIT_STATUS}]} -${SERVICE_OUTPUT}"
+    exit ${EXIT_STATUS}
+    ;;
+raid)
+    declare -a RaidStatus
+
+    SERVICE_OUTPUT=""
+    EXIT_STATUS=$STATE_OK
+
+    # ASYNCOS-MAIL-MIB::raidStatus
+    i=1
+    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.18.1.2)
+    do
+        RaidStatus[${i}]=$line
+
+        case ${RaidStatus[${i}]} in
+        1)
+            RAID_STATUS=$STATE_OK
+            status_string="Healthy"
+        ;;
+        2)
+            RAID_STATUS=$STATE_CRITICAL
+            status_string="Failure"
+        ;;
+        3)
+            RAID_STATUS=$STATE_WARNING
+            status_string="Rebuilding"
+        ;;
+        *)
+            RAID_STATUS=$STATE_UNKNOWN
+            status_string="Unknown"
+        ;;
+        esac
+
+        SERVICE_OUTPUT="${SERVICE_OUTPUT} Drive${i}=${status_string}(${STATE_STRING[${RAID_STATUS}]})"
+
+        case $RAID_STATUS in
+        $STATE_CRITICAL)
+            if [ ${EXIT_STATUS} -ne ${STATE_CRITICAL} ]; then
+                EXIT_STATUS=${RAID_STATUS}
+            fi
+        ;;
+        $STATE_OK)
+        ;;
+        $STATE_WARNING|$STATE_UNKNOWN)
+            if [ ${EXIT_STATUS} -eq ${STATE_OK} ]; then
+                EXIT_STATUS=${RAID_STATUS}
+            fi
+        ;;
+        esac
+
+        i=$(($i + 1 ))
+    done
+
+    echo "RAID status ${STATE_STRING[${EXIT_STATUS}]} -${SERVICE_OUTPUT}"
+    exit ${EXIT_STATUS}
+    ;;
+fan)
+    declare -a FanValue
+
+    FAN_STATUS=$STATE_OK
+    SERVICE_OUTPUT=""
+    PERF_DATA=""
+    EXIT_STATUS=$STATE_OK
+
+    # ASYNCOS-MAIL-MIB::fanRPMs
+    i=1
+    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.10.1.2)
+    do
+        FAN_STATUS=$STATE_OK
+        FanValue[${i}]=$line
+
+        if [ ${FanValue[${i}]} -gt ${CRIT_THRESHOLD} ]; then
+            FAN_STATUS=$STATE_CRITICAL
+        elif [ ${FanValue[${i}]} -gt ${WARN_THRESHOLD} ]; then
+            FAN_STATUS=$STATE_WARNING
+        fi
+
+        SERVICE_OUTPUT="${SERVICE_OUTPUT}Fan${i}=${FanValue[${i}]} RPM (${STATE_STRING[${FAN_STATUS}]}) "
+
+        case $FAN_STATUS in
+        $STATE_CRITICAL)
+            if [ ${EXIT_STATUS} -ne ${STATE_CRITICAL} ]; then
+                EXIT_STATUS=${FAN_STATUS}
+            fi
+        ;;
+        $STATE_OK)
+        ;;
+        $STATE_WARNING|$STATE_UNKNOWN)
+            if [ ${EXIT_STATUS} -eq ${STATE_OK} ]; then
+                EXIT_STATUS=${FAN_STATUS}
+            fi
+        ;;
+        esac
+
+        PERF_DATA="${PERF_DATA} 'Fan${i} RPM'=${FanValue[${i}]};${WARN_THRESHOLD};${CRIT_THRESHOLD}"
+
+        i=$(($i + 1 ))
+    done
+
+    echo "Fan status ${STATE_STRING[${EXIT_STATUS}]} - ${SERVICE_OUTPUT}|${PERF_DATA}"
+    exit ${EXIT_STATUS}
+    ;;
+esac
+
+echo "UNKNOWN: An unknown error occured."
+exit ${STATE_UNKNOWN}
