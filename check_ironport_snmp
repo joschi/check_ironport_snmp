@@ -142,7 +142,10 @@ esac
 case "${TYPE}" in
 mem)
     # ASYNCOS-MAIL-MIB::perCentMemoryUtilization.0
-    mem=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.1.0)
+    if ! mem=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.1.0 2>&1); then
+        echo "Memory utilization: $mem"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${mem} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -160,7 +163,10 @@ mem)
 ;;
 cpu)
     # ASYNCOS-MAIL-MIB::perCentCPUUtilization.0
-    cpu=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.2.0)
+    if ! cpu=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.2.0 2>&1); then
+        echo "CPU utilization: $cpu"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${cpu} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -178,7 +184,10 @@ cpu)
 ;;
 diskio)
     # ASYNCOS-MAIL-MIB::perCentDiskIOUtilization.0
-    diskio=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.3.0)
+    if ! diskio=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.3.0 2>&1); then
+        echo "Disk I/O utilization: $diskio"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${diskio} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -196,7 +205,10 @@ diskio)
 ;;
 queue)
     # ASYNCOS-MAIL-MIB::perCentQueueUtilization.0
-    queue=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.4.0)
+    if ! queue=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.4.0 2>&1); then
+        echo "Queue utilization: $queue"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${queue} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -214,7 +226,10 @@ queue)
 ;;
 queueavail)
     # ASYNCOS-MAIL-MIB::queueAvailabilityStatus.0
-    queue_status=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.5.0)
+    if ! queue_status=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.5.0 2>&1); then
+        echo "Queue availability: $queue_status"
+        exit ${STATE_UNKNOWN}
+    fi
 
     case ${queue_status} in
     1)
@@ -242,7 +257,10 @@ queueavail)
 ;;
 resourceconservation)
     # ASYNCOS-MAIL-MIB::resourceConservationReason.0
-    resource_conservation_reason=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.6.0)
+    if ! resource_conservation_reason=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.6.0 2>&1); then
+        echo "Resource conservation: $resource_conservation_reason"
+        exit ${STATE_UNKNOWN}
+    fi
 
     case ${resource_conservation_reason} in
     1)
@@ -274,7 +292,10 @@ resourceconservation)
 ;;
 memoryavail)
     # ASYNCOS-MAIL-MIB::memoryAvailabilityStatus.0
-    memory_status=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.7.0)
+    if ! memory_status=$($SNMPGET -Oe .1.3.6.1.4.1.15497.1.1.1.7.0 2>&1); then
+        echo "Memory availability: $memory_status"
+        exit ${STATE_UNKNOWN}
+    fi
 
     case ${memory_status} in
     1)
@@ -302,7 +323,10 @@ memoryavail)
 ;;
 temperature)
     # ASYNCOS-MAIL-MIB::degreesCelsius.1
-    temperature=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.9.1.2.1)
+    if ! temperature=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.9.1.2.1 2>&1); then
+        echo "Temperature: $temperature"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${temperature} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -320,7 +344,10 @@ temperature)
 ;;
 openfiles)
     # ASYNCOS-MAIL-MIB::openFilesOrSockets.0
-    open_files=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.19.0)
+    if ! open_files=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.19.0 2>&1); then
+        echo "Open files or sockets: $open_files"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${open_files} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -338,7 +365,10 @@ openfiles)
 ;;
 mailtransferthreads)
     # ASYNCOS-MAIL-MIB::mailTransferThreads.0
-    threads=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.20.0)
+    if ! threads=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.20.0 2>&1); then
+        echo "Mail transfer threads: $threads"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${threads} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -356,9 +386,15 @@ mailtransferthreads)
 ;;
 dns)
     # ASYNCOS-MAIL-MIB::outstandingDNSRequests.0
-    outstanding_dns=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.15.0)
+    if ! outstanding_dns=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.15.0 2>&1); then
+        echo "Outstanding DNS requests: $outstanding_dns"
+        exit ${STATE_UNKNOWN}
+    fi
     # ASYNCOS-MAIL-MIB::pendingDNSRequests.0
-    pending_dns=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.16.0)
+    if ! pending_dns=$($SNMPGET .1.3.6.1.4.1.15497.1.1.1.16.0 2>&1); then
+        echo "Pending DNS requests: $pending_dns"
+        exit ${STATE_UNKNOWN}
+    fi
 
     if [ ${outstanding_dns} -gt ${CRIT_THRESHOLD} -o ${pending_dns} -gt ${CRIT_THRESHOLD} ]; then
         EXIT_STATUS=${STATE_CRITICAL}
@@ -380,9 +416,14 @@ psstatus)
     SERVICE_OUTPUT=""
     EXIT_STATUS=$STATE_OK
 
+    if ! lines=$($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.8.1.2 2>&1); then
+        echo "Power Supply status: $lines"
+        exit ${STATE_UNKNOWN}
+    fi
+
     # ASYNCOS-MAIL-MIB::powerSupplyStatus
     i=1
-    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.8.1.2)
+    for line in $lines
     do
         PsStatus[${i}]=$line
 
@@ -438,9 +479,14 @@ psredundancy)
     SERVICE_OUTPUT=""
     EXIT_STATUS=$STATE_OK
 
+    if ! lines=$($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.8.1.3 2>&1); then
+        echo "Power Supply status: $lines"
+        exit ${STATE_UNKNOWN}
+    fi
+
     # ASYNCOS-MAIL-MIB::powerSupplyRedundancy
     i=1
-    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.8.1.3)
+    for line in $lines
     do
         PsRedundancy[${i}]=$line
 
@@ -488,9 +534,14 @@ raid)
     SERVICE_OUTPUT=""
     EXIT_STATUS=$STATE_OK
 
+    if ! lines=$($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.18.1.2 2>&1); then
+        echo "RAID status: $lines"
+        exit ${STATE_UNKNOWN}
+    fi
+
     # ASYNCOS-MAIL-MIB::raidStatus
     i=1
-    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.18.1.2)
+    for line in $lines
     do
         RaidStatus[${i}]=$line
 
@@ -544,9 +595,14 @@ fan)
     PERF_DATA=""
     EXIT_STATUS=$STATE_OK
 
+    if ! lines=$($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.10.1.2 2>&1); then
+        echo "Fan status: $lines"
+        exit ${STATE_UNKNOWN}
+    fi
+
     # ASYNCOS-MAIL-MIB::fanRPMs
     i=1
-    for line in $($SNMPWALK -Oe .1.3.6.1.4.1.15497.1.1.1.10.1.2)
+    for line in $lines
     do
         FAN_STATUS=$STATE_OK
         FanValue[${i}]=$line
