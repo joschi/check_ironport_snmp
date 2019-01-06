@@ -6,7 +6,7 @@
 # Description:  Checks Cisco Ironport Appliances via SNMP
 # License:      MIT, see LICENSE.txt
 
-if [ ! -z ${DEBUG} ]; then
+if [ -n "${DEBUG}" ]; then
     set -x
 fi
 
@@ -20,7 +20,7 @@ SNMP_VERSION="2c"
 PATH="/usr/local/bin:/usr/bin:/bin"
 
 # Show help message
-if [ "${1}" = "--help" -o "${#}" = "0" ]; then
+if [ "${1}" = "--help" ] || [ "${#}" = "0" ]; then
     cat <<EOF
 Usage: ./check_ironport_snmp -H host -C community -t type [-w warning] [-c critical]
 
@@ -65,7 +65,7 @@ fi
 # Check if all dependencies are available
 for CMD in "snmpget" "snmpwalk" "["
 do
-    if ! $(which ${CMD} &>/dev/null); then
+    if ! command -v "${CMD}" &>/dev/null; then
         echo "UNKNOWN: ${CMD} does not exist, please check if command exists and PATH is correct"
         exit ${STATE_UNKNOWN}
     fi
@@ -120,17 +120,17 @@ esac
 # Perform sanity check on thresholds
 case "${TYPE}" in
 cpu|mem|diskio|queue|temperature|fan|openfiles|mailtransferthreads|dns)
-    if [ -z ${WARN_THRESHOLD} ]; then
+    if [ -z "${WARN_THRESHOLD}" ]; then
         echo "Warning threshold missing. Please use -w to provide a value for warning threshold."
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ -z ${CRIT_THRESHOLD} ]; then
+    if [ -z "${CRIT_THRESHOLD}" ]; then
         echo "Critical threshold missing. Please use -c to provide a value for critical threshold."
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${CRIT_THRESHOLD} -le ${WARN_THRESHOLD} ]; then
+    if [ "${CRIT_THRESHOLD}" -le "${WARN_THRESHOLD}" ]; then
         echo "Critical threshold must not be smaller than warning threshold."
         exit ${STATE_UNKNOWN}
     fi
@@ -147,9 +147,9 @@ mem)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${mem} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${mem}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${mem} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${mem}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -168,9 +168,9 @@ cpu)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${cpu} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${cpu}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${cpu} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${cpu}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -189,9 +189,9 @@ diskio)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${diskio} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${diskio}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${diskio} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${diskio}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -210,9 +210,9 @@ queue)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${queue} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${queue}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${queue} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${queue}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -328,9 +328,9 @@ temperature)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${temperature} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${temperature}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${temperature} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${temperature}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -349,9 +349,9 @@ openfiles)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${open_files} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${open_files}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${open_files} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${open_files}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -370,9 +370,9 @@ mailtransferthreads)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${threads} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${threads}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${threads} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${threads}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -396,9 +396,9 @@ dns)
         exit ${STATE_UNKNOWN}
     fi
 
-    if [ ${outstanding_dns} -gt ${CRIT_THRESHOLD} -o ${pending_dns} -gt ${CRIT_THRESHOLD} ]; then
+    if [ "${outstanding_dns}" -gt "${CRIT_THRESHOLD}" ] || [ "${pending_dns}" -gt "${CRIT_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_CRITICAL}
-    elif [ ${outstanding_dns} -gt ${WARN_THRESHOLD} -o ${pending_dns} -gt ${WARN_THRESHOLD} ]; then
+    elif [ "${outstanding_dns}" -gt "${WARN_THRESHOLD}" ] || [ "${pending_dns}" -gt "${WARN_THRESHOLD}" ]; then
         EXIT_STATUS=${STATE_WARNING}
     else
         EXIT_STATUS=${STATE_OK}
@@ -454,20 +454,20 @@ psstatus)
 
         case $PS_STATUS in
         $STATE_CRITICAL)
-            if [ ${EXIT_STATUS} -ne ${STATE_CRITICAL} ]; then
+            if [ "${EXIT_STATUS}" -ne "${STATE_CRITICAL}" ]; then
                 EXIT_STATUS=${PS_STATUS}
             fi
         ;;
         $STATE_OK)
         ;;
         $STATE_WARNING|$STATE_UNKNOWN)
-            if [ ${EXIT_STATUS} -eq ${STATE_OK} ]; then
+            if [ "${EXIT_STATUS}" -eq "${STATE_OK}" ]; then
                 EXIT_STATUS=${PS_STATUS}
             fi
         ;;
         esac
 
-        i=$(($i + 1 ))
+        i=$((i + 1 ))
     done
 
     echo "Power Supply status ${STATE_STRING[${EXIT_STATUS}]} -${SERVICE_OUTPUT}"
@@ -522,7 +522,7 @@ psredundancy)
         ;;
         esac
 
-        i=$(($i + 1 ))
+        i=$((i + 1 ))
     done
 
     echo "Power Supply redundancy ${STATE_STRING[${EXIT_STATUS}]} -${SERVICE_OUTPUT}"
@@ -581,7 +581,7 @@ raid)
         ;;
         esac
 
-        i=$(($i + 1 ))
+        i=$((i + 1 ))
     done
 
     echo "RAID status ${STATE_STRING[${EXIT_STATUS}]} -${SERVICE_OUTPUT}"
@@ -607,24 +607,24 @@ fan)
         FAN_STATUS=$STATE_OK
         FanValue[${i}]=$line
 
-        if [ ${FanValue[${i}]} -gt ${CRIT_THRESHOLD} ]; then
-            FAN_STATUS=$STATE_CRITICAL
-        elif [ ${FanValue[${i}]} -gt ${WARN_THRESHOLD} ]; then
-            FAN_STATUS=$STATE_WARNING
+        if [ "${FanValue[${i}]}" -gt "${CRIT_THRESHOLD}" ]; then
+            FAN_STATUS=${STATE_CRITICAL}
+        elif [ "${FanValue[${i}]}" -gt "${WARN_THRESHOLD}" ]; then
+            FAN_STATUS=${STATE_WARNING}
         fi
 
         SERVICE_OUTPUT="${SERVICE_OUTPUT}Fan${i}=${FanValue[${i}]} RPM (${STATE_STRING[${FAN_STATUS}]}) "
 
         case $FAN_STATUS in
         $STATE_CRITICAL)
-            if [ ${EXIT_STATUS} -ne ${STATE_CRITICAL} ]; then
+            if [ "${EXIT_STATUS}" -ne "${STATE_CRITICAL}" ]; then
                 EXIT_STATUS=${FAN_STATUS}
             fi
         ;;
         $STATE_OK)
         ;;
         $STATE_WARNING|$STATE_UNKNOWN)
-            if [ ${EXIT_STATUS} -eq ${STATE_OK} ]; then
+            if [ "${EXIT_STATUS}" -eq "${STATE_OK}" ]; then
                 EXIT_STATUS=${FAN_STATUS}
             fi
         ;;
@@ -632,7 +632,7 @@ fan)
 
         PERF_DATA="${PERF_DATA} 'Fan${i} RPM'=${FanValue[${i}]};${WARN_THRESHOLD};${CRIT_THRESHOLD}"
 
-        i=$(($i + 1 ))
+        i=$((i + 1 ))
     done
 
     echo "Fan status ${STATE_STRING[${EXIT_STATUS}]} - ${SERVICE_OUTPUT}|${PERF_DATA}"
