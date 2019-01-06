@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script:       check_ironport_snmp
-# Version:      0.1
+# Version:      0.1.1
 # Author:       Jochen Schalanda <jochen@schalanda.name>
 # Description:  Checks Cisco Ironport Appliances via SNMP
 # License:      MIT, see LICENSE.txt
