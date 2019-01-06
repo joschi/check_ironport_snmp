@@ -1,0 +1,6 @@
+language: shell
+script:
+  # Validate syntax
+  - bash -n check_ironport_snmp
+  # Run ShellCheck - https://www.shellcheck.net/
+  - shellcheck check_ironport_snmp
